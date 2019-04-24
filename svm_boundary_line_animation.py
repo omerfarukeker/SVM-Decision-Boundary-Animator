@@ -16,19 +16,23 @@ from sklearn.datasets import load_iris
 import numpy as np
 from sklearn import preprocessing
 
+#load iris data from sklearn datasets
 iris = load_iris()
 
-#use only petal length and petal width data, only versicolor and virginica are the targets
+#use only petal length and petal width data, 
 flowers = [1,2]
 
+#only versicolor and virginica are the targets
 target_cond = (iris.target == flowers[0]) | (iris.target == flowers[1])
+
+#construct a dataframe with the conditions
 df_features = pd.DataFrame(preprocessing.scale(iris.data[target_cond,2:]),
                            columns = iris.feature_names[2:])
 df_targets = pd.DataFrame(iris.target[target_cond],columns=["Targets"])
 df = pd.concat([df_features,df_targets],axis=1)
 
 #shuffle the dataset
-df = df.reindex(np.random.permutation(df.index))
+df = df.reindex(np.random.RandomState(seed=2).permutation(df.index))
 df = df.reset_index(drop=True)
 
 #%% train SVM dynamically by adding new data in the loop
@@ -43,19 +47,19 @@ SVM_model = SVC(kernel="linear")
 #from sklearn.svm import LinearSVC
 #SVM_model = LinearSVC()
 
-#train the SVM model with the first 10 instances
-#otherwise SVM will throw error when tried to train SVM with single class data
-init_rows = 10
+#train the SVM model with the first 2 instances
+#otherwise SVM will throw error when tried to train SVM feeding samples one-by-one
+#(the permutation seed above is determined for this)
+init_rows = 2
 X = df.iloc[:init_rows,:2]
 y = df["Targets"][:init_rows]
 SVM_model.fit(X,y)
 
-markers = df.Targets.replace({1:"o",2:"^"})
 classes = df.Targets.value_counts().index
 
 scores = [SVM_model.score(X,y)]
-lines = []
 
+# Dynamic plotting part
 fig = plt.figure()
 camera = Camera(fig)
 ax = fig.add_subplot(111)
@@ -68,24 +72,37 @@ for i in range(init_rows+1,len(df_targets)):
     y = df["Targets"][:i]
     SVM_model.fit(X,y)
     
+    #get model parameters
     w0 = SVM_model.intercept_[0]
     w1 = SVM_model.coef_[0][0]
     w2 = SVM_model.coef_[0][1]
+    sv_inxs = pd.Series(SVM_model.support_) #support vector indices
     
-    s_vectors = SVM_model.support_vectors_[0]
-    
-    #plot the data and model
     l = df["petal length (cm)"][:i]
     w = df["petal width (cm)"][:i]
     t = df["Targets"][:i]
-#    f1 = ax.scatter(l[t==classes[0]],w[t==classes[0]],c="cornflowerblue",marker="o",s=100,edgecolors="steelblue")
-#    f2 = ax.scatter(l[t==classes[1]],w[t==classes[1]],c="sandybrown",marker="^",s=100,edgecolors="sienna")
+    
     f1 = ax.scatter(l[t==classes[0]],w[t==classes[0]],c="cornflowerblue",marker="o")
     f2 = ax.scatter(l[t==classes[1]],w[t==classes[1]],c="sandybrown",marker="^")
+#    alternative visualisation of data points
+#    f1 = ax.scatter(l[t==classes[0]],w[t==classes[0]],c="cornflowerblue",marker="o",s=100,edgecolors="steelblue")
+#    f2 = ax.scatter(l[t==classes[1]],w[t==classes[1]],c="sandybrown",marker="^",s=100,edgecolors="sienna")
+ 
+    #find indexes of support vectors for each class
+    a0 = pd.Series(t.index[t==classes[0]])
+    inx0 = a0[a0.isin(sv_inxs)].values
+    a1 = pd.Series(t.index[t==classes[1]])
+    inx1 = a1[a1.isin(sv_inxs)].values
+    
+    #plot the support vectors
+    ax.scatter(l[inx0],w[inx0],c="cornflowerblue",marker="o",edgecolors="black")
+    ax.scatter(l[inx1],w[inx1],c="sandybrown",marker="^",edgecolors="black")
+    
+    #calculate the model accuracy
     scores.append(SVM_model.score(X,y))
     
     #draw the SVM boundary line
-    func_text_pos_y = svm_boundary_line(ax,w1,w2,w0,s_vectors)
+    func_text_pos_y = svm_boundary_line(ax,w1,w2,w0)
     
     #title wont work with celluloid package, text is an alternative to workaround
     ax.text(0.25, 1.03, "SVM Training Accuracy: %.2f"%(SVM_model.score(X,y)), 
@@ -101,9 +118,8 @@ for i in range(init_rows+1,len(df_targets)):
     if func_text_pos_y < 2.95:
         ax.text(-2, func_text_pos_y, r"$y = \frac{%.2f}{%.2f}+\frac{%.2f}{%.2f}x$"%(-w0,w2,-w1,w2), 
                 fontweight="bold")
-    
         
-    ax.legend([f1,f2],iris.target_names[flowers])
+    ax.legend([f1,f2],iris.target_names[flowers],fontsize=9)
    
     #take a snapshot of the figure
     camera.snap()
